@@ -1,46 +1,57 @@
-#On choisit une debian
-FROM debian:11.1
+FROM php:7.4-fpm
 
-LABEL org.opencontainers.image.authors="github@diouxx.be"
+RUN ln -fs /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime && \
+    dpkg-reconfigure -f noninteractive tzdata
 
-
-#Ne pas poser de question à l'installation
-ENV DEBIAN_FRONTEND noninteractive
-
-#Installation d'apache et de php7.4 avec extension
-RUN apt update \
-&& apt install --yes --no-install-recommends \
-apache2 \
-php7.4 \
-php7.4-mysql \
-php7.4-ldap \
-php7.4-xmlrpc \
-php7.4-imap \
-curl \
-php7.4-curl \
-php7.4-gd \
-php7.4-mbstring \
-php7.4-xml \
-php7.4-apcu-bc \
-php-cas \
-php7.4-intl \
-php7.4-zip \
-php7.4-bz2 \
+RUN apt-get update \
+&& apt-get install --yes --no-install-recommends \
 cron \
-wget \
-ca-certificates \
-jq \
-libldap-2.4-2 \
-libldap-common \
-libsasl2-2 \
-libsasl2-modules \
-libsasl2-modules-db \
-&& rm -rf /var/lib/apt/lists/*
+libicu-dev \
+libldap2-dev \
+libpng-dev \
+libxml2-dev \
+libzip-dev \
+nginx \
+supervisor \
+&& apt-get clean
 
-#Copie et execution du script pour l'installation et l'initialisation de GLPI
-COPY glpi-start.sh /opt/
-RUN chmod +x /opt/glpi-start.sh
-ENTRYPOINT ["/opt/glpi-start.sh"]
+RUN docker-php-ext-install ldap mysqli pdo_mysql gd intl zip opcache exif opcache xmlrpc
 
-#Exposition des ports
-EXPOSE 80 443
+RUN rm -r /usr/local/etc/php/php.ini-development && \
+rm -r /usr/local/etc/php-fpm.conf.default && \
+rm -r /usr/local/etc/php-fpm.d/*.conf && \
+mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini && \
+mv /usr/local/etc/php-fpm.d/www.conf.default /usr/local/etc/php-fpm.d/glpi.conf
+
+RUN sed '/^\;\|^$/d' -i /usr/local/etc/php-fpm.conf && \
+sed '/^\;\|^$/d' -i /usr/local/etc/php-fpm.d/glpi.conf && \
+sed 's/\[www\]/[glpi]/' -i /usr/local/etc/php-fpm.d/glpi.conf && \
+sed 's/listen = 127.0.0.1:9000/listen = \/run\/php-fpm.sock/' -i /usr/local/etc/php-fpm.d/glpi.conf && \
+sed '/php-fpm.sock/a \
+listen.owner = www-data\n \
+listen.group = www-data\n \
+listen.mode = 0660' \
+-i /usr/local/etc/php-fpm.d/glpi.conf
+
+RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/nginx.conf
+RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/fastcgi.conf
+RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/snippets/fastcgi-php.conf
+RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/sites-available/default
+RUN sed '/listen \[::\]:80/d' -i /etc/nginx/sites-available/default
+RUN sed 's/ index.nginx-debian.html//' -i /etc/nginx/sites-available/default
+RUN sed 's/index /&index.php /' -i /etc/nginx/sites-available/default
+
+RUN sed '/server_name _\;/a\\t \
+location ~ \\.php$ {\n \
+\t\tinclude snippets/fastcgi-php.conf;\n \
+\t\tfastcgi_pass unix:/run/php-fpm.sock;\n \
+\t}\n \
+\tlocation ~ /\\.ht {\n \
+\t\tdeny all;\n \
+\t}' \
+-i /etc/nginx/sites-available/default
+
+RUN rm -rf /var/www/html/*
+COPY confs/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+EXPOSE 80
