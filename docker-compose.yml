@@ -8,32 +8,50 @@ services:
       - backend
     volumes:
       - database:/var/lib/mysql
-    env_file:
-      - ./glpi.env
-    restart: always
-
+    environment:
+      - TZ=$TIMEZONE
+      - MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE=$MYSQL_DATABASE
+      - MYSQL_USER=$MYSQL_USER
+      - MYSQL_PASSWORD=$MYSQL_PASSWORD
 #GLPI Container
   app:
-    image: pmag/glpi:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=http-proxy
+        - traefik.constraint-label=http-proxy
+        - traefik.http.routers.glpi.rule=Host(`$DOMAIN`)
+        - traefik.http.routers.glpi.entrypoints=http
+        - traefik.http.services.glpi.loadbalancer.server.port=80
+    environment:
+      - DOMAIN=$DOMAIN
+      - TZ=America/Sao_Paulo
+      - DBNAME=$MYSQL_DATABASE
+      - DBUSER=$MYSQL_USER
+      - DBPASSWORD=$MYSQL_PASSWORD
+    image: registry.gitlab.aparecida.go.gov.br/desenvolvimento/docker/glpi/glpi
     networks:
       - backend
-    ports:
-      - "8181:80"
-    env_file:
-      - ./glpi.env
-    restart: always
-    configs:
-      - source: TZ
-        target: /etc/timezone
+      - http-proxy
+    secrets:
+      - source: glpicrypt.key
+        target: /var/www/html/config/glpicrypt.key
 
 configs:
-  TZ:
+  timezone:
     external: true
 
 networks:
   backend:
     driver: overlay
     attachable: false
+  http-proxy:
+    external: true
+
+secrets:
+  glpicrypt.key:
+    external: true
 
 volumes:
   database:

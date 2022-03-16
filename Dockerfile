@@ -20,15 +20,25 @@ supervisor \
 && apt-get clean \
 && rm -rf /var/lib/apt/lists/*
 
-RUN docker-php-ext-install bz2 ldap mysqli pdo_mysql gd intl zip opcache exif opcache xmlrpc && \
-pecl install -f apcu << "yes"
+RUN docker-php-ext-install \
+    bz2 \
+    ldap \
+    mysqli \
+    pdo_mysql \
+    gd \
+    intl \
+    zip \
+    opcache \
+    exif \
+    xmlrpc && \
+pecl install -o -f apcu << "no" \
+&& docker-php-ext-enable apcu
 
 RUN rm -r /usr/local/etc/php/php.ini-development && \
 rm -r /usr/local/etc/php-fpm.conf.default && \
 rm -r /usr/local/etc/php-fpm.d/*.conf && \
 mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini && \
-mv /usr/local/etc/php-fpm.d/www.conf.default /usr/local/etc/php-fpm.d/glpi.conf && \
-echo "extension=apcu.so" >> /usr/local/etc/php/conf.d/apcu.ini
+mv /usr/local/etc/php-fpm.d/www.conf.default /usr/local/etc/php-fpm.d/glpi.conf
 
 RUN sed '/^\;\|^$/d' -i /usr/local/etc/php-fpm.conf && \
 sed '/^\;\|^$/d' -i /usr/local/etc/php-fpm.d/glpi.conf && \
@@ -40,15 +50,14 @@ listen.group = www-data\n\
 listen.mode = 0660' \
 -i /usr/local/etc/php-fpm.d/glpi.conf
 
-RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/nginx.conf
-RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/fastcgi.conf
-RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/snippets/fastcgi-php.conf
-RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/sites-available/default
-RUN sed '/listen \[::\]:80/d' -i /etc/nginx/sites-available/default
-RUN sed 's/ index.nginx-debian.html//' -i /etc/nginx/sites-available/default
-RUN sed 's/index /&index.php /' -i /etc/nginx/sites-available/default
-
-RUN sed '/server_name _\;/a \
+RUN sed '/^\s*\#\|^$/d' -i /etc/nginx/nginx.conf &&\
+    sed '/^\s*\#\|^$/d' -i /etc/nginx/fastcgi.conf &&\
+    sed '/^\s*\#\|^$/d' -i /etc/nginx/snippets/fastcgi-php.conf &&\
+    sed '/^\s*\#\|^$/d' -i /etc/nginx/sites-available/default &&\
+    sed '/listen \[::\]:80/d' -i /etc/nginx/sites-available/default &&\
+    sed 's/ index.nginx-debian.html//' -i /etc/nginx/sites-available/default &&\
+    sed 's/index /&index.php /' -i /etc/nginx/sites-available/default &&\
+    sed '/server_name _\;/a \
 \\tlocation ~ /\\.ht {\n \
 \t\tdeny all;\n \
 \t}\n\
@@ -59,9 +68,8 @@ RUN sed '/server_name _\;/a \
 \t\tinclude snippets/fastcgi-php.conf;\n \
 \t\tfastcgi_pass unix:/run/php-fpm.sock;\n \
 \t}' \
--i /etc/nginx/sites-available/default
-
-RUN rm -rf /var/www/*
+-i /etc/nginx/sites-available/default &&\
+rm -rf /var/www/*
 
 COPY confs/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY ./start.sh /usr/local/bin/start.sh
